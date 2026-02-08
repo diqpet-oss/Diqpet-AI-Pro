@@ -1,0 +1,7 @@
+{
+  "name": "Diqpet AI Pro - Virtual Pet Fitting Room",
+  "description": "An AI-powered virtual fitting room for pets allowing users to visualize pet clothing through both real-time manual adjustments and high-quality AI image generation using Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
