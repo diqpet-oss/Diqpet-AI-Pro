@@ -1,8 +1,9 @@
+
 import OpenAI from "openai";
 import { fal } from "@fal-ai/client";
 
 /**
- * 辅助函数：将 DataURL 转为 Blob (用于 Fal.ai 上传)
+ * 辅助函数：DataURL 转 Blob (供 Fal.ai 使用)
  */
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const arr = dataUrl.split(",");
@@ -15,7 +16,7 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
 };
 
 /**
- * 核心生成函数：保持导出名不变，内部切换为豆包生图逻辑
+ * 核心生成函数 - 适配豆包与 Fal.ai
  */
 export const generateFitting = async (
   engine: 'gemini' | 'fal', 
@@ -25,22 +26,22 @@ export const generateFitting = async (
 ): Promise<string> => {
   
   // ---------------------------------------------------------
-  // 1. 核心配置 (根据火山引擎控制台填入)
+  // 1. 核心配置
   // ---------------------------------------------------------
-  // 豆包 API Key 和 终端 Endpoint
+  // 豆包 (火山引擎) 配置
   const DOUBAO_API_KEY = "ff9cbd45-18a5-4acf-9db0-a684c415120d"; 
   const DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
-  // 关键：这里填入你在“方舟”控制台创建的【Doubao-Pixel】推理终端 ID
+  // 注意：此处填入 ep-xxxx 格式的推理终端 ID
   const DOUBAO_MODEL_ID = "doubao-seedream-4-5-251128"; 
 
-  // Fal.ai Key (保持原样)
+  // Fal.ai 配置
   const FAL_API_KEY = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
 
   // ---------------------------------------------------------
-  // 2. 引擎分发
+  // 2. 逻辑分发
   // ---------------------------------------------------------
 
-  // 按钮选 GEMINI 时，实际运行豆包 Pixel 逻辑
+  // 豆包逻辑 (内部标识沿用 'gemini' 对应 UI 逻辑，但内部指向豆包)
   if (engine === 'gemini') {
     try {
       const openai = new OpenAI({
@@ -49,27 +50,27 @@ export const generateFitting = async (
         dangerouslyAllowBrowser: true 
       });
 
-      // 针对豆包优化的中文提示词
-      const prompt = `专业宠物摄影。一只宠物正在穿着：${description}。场景背景为${style}。画面真实，细节丰富，8k分辨率。`;
+      // 豆包是国产模型，使用中文 Prompt 效果更惊艳
+      const finalPrompt = `专业宠物摄影。一只宠物正在穿着：${description}。场景设在${style}背景下。写实风格，8k精细画质，构图完美。`;
 
       const response = await openai.images.generate({
         model: DOUBAO_MODEL_ID,
-        prompt: prompt,
+        prompt: finalPrompt,
         size: "1024x1024",
-        n: 1,
       });
 
+      // 豆包返回的是一个临时图片 URL
       const imageUrl = response.data[0]?.url;
       if (imageUrl) return imageUrl;
       
-      throw new Error("豆包未能生成有效图片链接。");
+      throw new Error("豆包未能生成图片，请检查配额或推理终端状态。");
     } catch (error: any) {
-      console.error("Doubao Service Error:", error);
-      throw new Error(`豆包生成失败: ${error.message}`);
+      console.error("Doubao Error Detail:", error);
+      throw new Error(`豆包生图失败: ${error.message}`);
     }
   } 
   
-  // --- Fal.ai Flux 引擎逻辑 ---
+  // --- Fal.ai Flux 引擎 ---
   else {
     fal.config({ credentials: FAL_API_KEY });
 
