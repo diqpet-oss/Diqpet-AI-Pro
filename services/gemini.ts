@@ -43,8 +43,8 @@ export const generateFitting = async (
 ): Promise<string> => {
   
   // 1. 获取 Key (添加 trim() 确保没有换行符或空格)
-  const GEMINI_KEY = (import.meta.env.VITE_GEMINI_KEY || "").trim();
-  const FAL_KEY = (import.meta.env.VITE_FAL_KEY || "").trim();
+  const GEMINI_KEY = AIzaSyDnj72Pn4Yf8gNq6VK15xkADQJPYmwMNcg;
+  const FAL_KEY = 81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2c;
 
   const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. 8k, photorealistic.`;
 
