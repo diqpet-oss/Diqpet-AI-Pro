@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { fal } from "@fal-ai/client";
 
 /**
- * 이미지 데이터를 Gemini용 Base64 InlineData로 변환
+ * 辅助函数：处理图片转 Base64
  */
 async function imageToGeminiPart(imageSource: string) {
   let base64Data = "";
@@ -20,15 +20,12 @@ async function imageToGeminiPart(imageSource: string) {
       const arrayBuffer = await blob.arrayBuffer();
       base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
     } catch (e) {
-      throw new Error("이미지 데이터를 가져오지 못했습니다. 로컬 파일을 업로드해 보세요.");
+      throw new Error("이미지 데이터를 가져오지 못했습니다.");
     }
   }
   return { inlineData: { data: base64Data, mimeType } };
 }
 
-/**
- * Base64를 Fal 업로드용 Blob으로 변환
- */
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const arr = dataUrl.split(",");
   const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
@@ -46,28 +43,40 @@ export const generateFitting = async (
   style: string = 'Studio'
 ): Promise<string> => {
   
-  const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. Ensure the pet's face, fur texture, and breed features are 100% consistent with the source image. 8k, professional studio lighting, photorealistic.`;
+  const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. 8k, professional studio lighting, photorealistic.`;
 
-  // --- 核心修复：使用 Vite 环境变量读取方式 ---
+  // --- 关键修改：确保从 Vite 环境变量读取 ---
   const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_KEY;
   const FAL_API_KEY = import.meta.env.VITE_FAL_KEY;
 
   if (engine === 'gemini') {
-    if (!GEMINI_API_KEY) throw new Error("Vercel 설정에서 VITE_GEMINI_KEY를 확인해주세요.");
+    // 显式检查 Key 是否存在，避免浏览器初始化失败
+    if (!GEMINI_API_KEY) {
+      throw new Error("Gemini API Key가 설정되지 않았습니다. Vercel 환경 변수를 확인해주세요.");
+    }
     
-    const ai = new GoogleGenAI(GEMINI_API_KEY);
+    // 初始化模型
+    const genAI = new GoogleGenAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
     const petPart = await imageToGeminiPart(petImageSource);
     
-    const response = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent([petPart, prompt]);
-    const result = await response.response;
-    const part = result.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-    
-    if (part?.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-    throw new Error("Gemini AI가 이미지를 생성하지 못했습니다.");
+    try {
+      const result = await model.generateContent([petPart, prompt]);
+      const response = await result.response;
+      const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+      
+      if (part?.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      throw new Error("이미지 생성 결과가 없습니다.");
+    } catch (error: any) {
+      throw new Error(`Gemini 오류: ${error.message}`);
+    }
   } 
   
   else {
-    if (!FAL_API_KEY) throw new Error("Vercel 설정에서 VITE_FAL_KEY를 확인해주세요.");
+    if (!FAL_API_KEY) {
+      throw new Error("Fal.ai API Key가 설정되지 않았습니다. Vercel 환경 변수를 확인해주세요.");
+    }
 
     fal.config({ credentials: FAL_API_KEY });
 
@@ -83,10 +92,11 @@ export const generateFitting = async (
         input: { image: petUrl, prompt: prompt, strength: 0.65 }
       });
 
+      // 增加多层级 URL 解析
       const finalUrl = result?.images?.[0]?.url || result?.image?.url || result?.data?.images?.[0]?.url;
       if (finalUrl) return finalUrl;
 
-      throw new Error("이미지 URL을 추출하지 못했습니다.");
+      throw new Error("이미지 URL을 추출할 수 없습니다.");
     } catch (err: any) {
       throw new Error(`Fal.ai 오류: ${err.message}`);
     }
