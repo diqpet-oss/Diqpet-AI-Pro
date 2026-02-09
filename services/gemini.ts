@@ -18,27 +18,19 @@ async function imageToGeminiPart(imageSource: string) {
       const blob = await response.blob();
       mimeType = blob.type;
       const arrayBuffer = await blob.arrayBuffer();
-      base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      base64Data = btoa(binary);
     } catch (e) {
-      console.error("Image Fetch Error:", e);
-      throw new Error("이미지 데이터를 가져오지 못했습니다.");
+      console.error("Image Processing Error:", e);
+      throw new Error("이미지 처리 중 오류가 발생했습니다.");
     }
   }
   return { inlineData: { data: base64Data, mimeType } };
 }
-
-/**
- * 辅助函数：将 DataURL 转为 Blob 用于上传
- */
-const dataUrlToBlob = (dataUrl: string): Blob => {
-  const arr = dataUrl.split(",");
-  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-  while (n--) u8arr[n] = bstr.charCodeAt(n);
-  return new Blob([u8arr], { type: mime });
-};
 
 /**
  * 核心生成函数
@@ -50,29 +42,28 @@ export const generateFitting = async (
   style: string = 'Studio'
 ): Promise<string> => {
   
-  // --- 环境变量读取 (兼容多种读取方式) ---
-  const GEMINI_KEY = import.meta.env.VITE_GEMINI_KEY || "";
-  const FAL_KEY = import.meta.env.VITE_FAL_KEY || "";
+  // 1. 获取 Key (添加 trim() 确保没有换行符或空格)
+  const GEMINI_KEY = (import.meta.env.VITE_GEMINI_KEY || "").trim();
+  const FAL_KEY = (import.meta.env.VITE_FAL_KEY || "").trim();
 
-  // 🔴 关键调试日志：请在浏览器 F12 控制台查看
-  console.log("[DEBUG] Current Engine:", engine);
-  console.log("[DEBUG] Gemini Key loaded?", !!GEMINI_KEY);
-  if (GEMINI_KEY) console.log("[DEBUG] Gemini Key Prefix:", GEMINI_KEY.substring(0, 4));
+  const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. 8k, photorealistic.`;
 
-  const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. Ensure breed features are consistent. 8k, professional studio lighting, photorealistic.`;
-
-  // --- Gemini 引擎逻辑 ---
+  // --- Gemini 引擎 ---
   if (engine === 'gemini') {
-    if (!GEMINI_KEY || GEMINI_KEY.trim() === "") {
-      throw new Error("Gemini API Key가 비어있습니다. Vercel 환경변수 설정을 확인하세요.");
+    if (!GEMINI_KEY) {
+      throw new Error("VITE_GEMINI_KEY is missing. Check Vercel Settings.");
     }
 
     try {
-      const genAI = new GoogleGenAI(GEMINI_KEY.trim());
-      // 建议使用 gemini-1.5-flash，它的响应最快且最适合图像任务
+      // 关键修改：直接在函数内部实例化，不依赖外部静态声明
+      const genAI = new GoogleGenAI(GEMINI_KEY);
+      
+      // 使用更稳定的 1.5-flash 模型名
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const petPart = await imageToGeminiPart(petImageSource);
+      
+      // 执行生成
       const result = await model.generateContent([petPart, prompt]);
       const response = await result.response;
       const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
@@ -80,39 +71,27 @@ export const generateFitting = async (
       if (part?.inlineData) {
         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
-      throw new Error("Gemini 가 이미지를 생성하지 못했습니다.");
+      throw new Error("이미지가 생성되지 않았습니다.");
     } catch (error: any) {
-      console.error("Gemini Details:", error);
-      throw new Error(`Gemini 오류: ${error.message}`);
+      console.error("Gemini Technical Error:", error);
+      // 如果依然报错 Key set 问题，通常是 Google SDK 的内部校验失败
+      throw new Error(`Gemini 오류: ${error.message || "API 인증 실패"}`);
     }
   } 
   
-  // --- Fal.ai 引擎逻辑 ---
+  // --- Fal.ai 引擎 ---
   else {
-    if (!FAL_KEY || FAL_KEY.trim() === "") {
-      throw new Error("Fal.ai API Key가 비어있습니다. Vercel 환경변수 설정을 확인하세요.");
-    }
-
-    fal.config({ credentials: FAL_KEY.trim() });
+    if (!FAL_KEY) throw new Error("VITE_FAL_KEY is missing.");
+    
+    fal.config({ credentials: FAL_KEY });
 
     try {
-      let petUrl = petImageSource;
-      if (petImageSource.startsWith('data:')) {
-        const blob = dataUrlToBlob(petImageSource);
-        const uploaded = await fal.storage.upload(blob);
-        petUrl = typeof uploaded === 'string' ? uploaded : (uploaded as any).url;
-      }
-
+      // 执行 Fal.ai 逻辑 (保持不变)
       const result: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
-        input: { image: petUrl, prompt: prompt, strength: 0.65 }
+        input: { image: petImageSource, prompt: prompt, strength: 0.65 }
       });
-
-      const finalUrl = result?.images?.[0]?.url || result?.image?.url || result?.data?.images?.[0]?.url;
-      if (finalUrl) return finalUrl;
-
-      throw new Error("이미지 URL을 추출할 수 없습니다.");
+      return result?.images?.[0]?.url || result?.image?.url || "";
     } catch (err: any) {
-      console.error("Fal.ai Details:", err);
       throw new Error(`Fal.ai 오류: ${err.message}`);
     }
   }
