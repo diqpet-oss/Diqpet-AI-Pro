@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { fal } from "@fal-ai/client";
 
 /**
- * Helper function: Convert image source to Base64 InlineData for Gemini
+ * 辅助函数：将图片源转换为 Gemini 要求的 Base64 格式
  */
 async function imageToGeminiPart(imageSource: string) {
   let base64Data = "";
@@ -26,7 +26,7 @@ async function imageToGeminiPart(imageSource: string) {
       }
       base64Data = btoa(binary);
     } catch (e) {
-      console.error("Failed to fetch image", e);
+      console.error("获取图片失败:", e);
       throw new Error("이미지 데이터를 가져오지 못했습니다. 로컬 파일을 업로드해 보세요.");
     }
   }
@@ -35,7 +35,7 @@ async function imageToGeminiPart(imageSource: string) {
 }
 
 /**
- * Helper function: Convert Base64 to Blob for Fal storage upload
+ * 辅助函数：将 Base64 转换为 Blob 以便上传到 Fal 存储
  */
 const dataUrlToBlob = (dataUrl: string): Blob => {
   try {
@@ -47,13 +47,13 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
     while (n--) u8arr[n] = bstr.charCodeAt(n);
     return new Blob([u8arr], { type: mime });
   } catch (e) {
-    console.error("DataURL to Blob conversion error:", e);
+    console.error("DataURL 转换 Blob 错误:", e);
     throw new Error("이미지 전처리에 실패했습니다. 업로드한 이미지를 확인해 주세요.");
   }
 };
 
 /**
- * Unified generation interface supporting both Gemini and Fal.ai Flux
+ * 统一生成接口：支持 Gemini 和 Fal.ai Flux
  */
 export const generateFitting = async (
   engine: 'gemini' | 'fal',
@@ -64,13 +64,19 @@ export const generateFitting = async (
   
   const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. Ensure the pet's face, fur texture, and breed features are 100% consistent with the source image. The clothing should fit the pet's body realistically with high-detail fabric textures and studio shadows. 8k, professional studio lighting, photorealistic.`;
 
-  // --- Gemini Engine Implementation ---
+  // 安全获取环境变量 (兼容 Vite 和标准 Node 环境)
+  const GEMINI_KEY = import.meta.env?.VITE_GEMINI_KEY || process.env.API_KEY || process.env.VITE_GEMINI_KEY;
+  const FAL_KEY = import.meta.env?.VITE_FAL_KEY || process.env.FAL_KEY || process.env.VITE_FAL_KEY;
+
+  // --- Gemini 引擎实现 ---
   if (engine === 'gemini') {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    if (!GEMINI_KEY) throw new Error("Gemini API Key 未配置，请检查环境变量。");
+
+    const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
     const petPart = await imageToGeminiPart(petImageSource);
     
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: 'gemini-2.0-flash', // 修正为当前可用模型
       contents: { parts: [petPart, { text: prompt }] },
     });
 
@@ -85,16 +91,16 @@ export const generateFitting = async (
     throw new Error("Gemini AI가 생성된 이미지를 반환하지 못했습니다.");
   } 
   
-  // --- Fal.ai Flux Engine Implementation ---
+  // --- Fal.ai Flux 引擎实现 ---
   else {
-    const falApiKey = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
+    if (!FAL_KEY) throw new Error("Fal.ai API Key 未配置，请检查环境变量。");
 
     fal.config({ 
-      credentials: falApiKey
+      credentials: FAL_KEY
     });
 
     try {
-      // 1. Upload image if it's base64/data URL
+      // 1. 处理图片上传
       let petUrl = petImageSource;
       if (petImageSource.startsWith('data:')) {
         const blob = dataUrlToBlob(petImageSource);
@@ -102,10 +108,10 @@ export const generateFitting = async (
         petUrl = typeof uploaded === 'string' ? uploaded : (uploaded as any).url;
       }
 
-      // 2. Perform Inference
+      // 2. 执行 Flux 推理
       const result: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
-          image_url: petUrl, 
+          image: petUrl, // 部分版本使用 'image' 字段
           prompt: prompt,
           strength: 0.65, 
           num_inference_steps: 28,
@@ -115,45 +121,38 @@ export const generateFitting = async (
         }
       });
 
-      console.debug("Fal.ai Raw Response:", result);
+      console.debug("Fal.ai 原始响应:", result);
 
-      // 3. Ultra-Robust result parsing to handle nested 'data' objects
+      // 3. 增强版结果解析逻辑 (兼容多种返回结构)
       let finalImageUrl = "";
       
-      const extractFromContainer = (container: any) => {
-          if (!container) return null;
-          if (container.images && Array.isArray(container.images) && container.images.length > 0) {
-              const first = container.images[0];
-              return typeof first === 'string' ? first : first.url;
+      const extractUrl = (obj: any) => {
+          if (!obj) return null;
+          // 检查 images 数组
+          if (obj.images && Array.isArray(obj.images) && obj.images.length > 0) {
+              return typeof obj.images[0] === 'string' ? obj.images[0] : obj.images[0].url;
           }
-          if (container.image?.url) return container.image.url;
-          if (container.data && Array.isArray(container.data) && container.data.length > 0) {
-              const first = container.data[0];
-              return first?.url || (typeof first === 'string' ? first : null);
-          }
-          if (typeof container === 'string' && container.startsWith('http')) return container;
-          if (container.url) return container.url;
-          
+          // 检查单个 image 对象
+          if (obj.image?.url) return obj.image.url;
+          // 检查 URL 直接属性
+          if (obj.url) return obj.url;
           return null;
       };
 
-      finalImageUrl = extractFromContainer(result);
-
-      if (!finalImageUrl && result?.data) {
-          finalImageUrl = extractFromContainer(result.data);
-      }
+      // 尝试从根部或 data 字段提取
+      finalImageUrl = extractUrl(result) || extractUrl(result?.data);
 
       if (finalImageUrl && typeof finalImageUrl === 'string') {
         return finalImageUrl;
       }
 
-      throw new Error(`응답에서 이미지 URL을 추출하지 못했습니다. 응답 요약: ${JSON.stringify(result).substring(0, 150)}...`);
+      throw new Error(`이미지 URL을 추출하지 못했습니다. 응답: ${JSON.stringify(result).substring(0, 100)}...`);
 
     } catch (err: any) {
-      console.error("Fal.ai Error Detailed:", err);
+      console.error("Fal.ai 详细错误:", err);
       const details = err.body?.detail || err.message || "알 수 없는 오류";
-      if (details.includes("Authentication") || details.includes("Unauthorized") || details.includes("401")) {
-        throw new Error("Fal.ai 인증 실패: API Key 권한을 확인해 주세요.");
+      if (details.includes("Authentication") || details.includes("401")) {
+        throw new Error("Fal.ai 인증 실패: API Key가 유효하지 않거나 잔액이 부족합니다.");
       }
       throw new Error(`Fal.ai 렌더링 실패: ${details}`);
     }
