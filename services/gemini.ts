@@ -1,41 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { fal } from "@fal-ai/client";
 
 /**
- * 辅助函数：将图片源转换为 Gemini 要求的 Base64 格式
- */
-async function imageToGeminiPart(imageSource: string) {
-  let base64Data = "";
-  let mimeType = "image/png";
-
-  if (imageSource.startsWith("data:")) {
-    const [header, data] = imageSource.split(",");
-    const match = header.match(/:(.*?);/);
-    mimeType = match ? match[1] : "image/png";
-    base64Data = data;
-  } else {
-    try {
-      const response = await fetch(imageSource);
-      const blob = await response.blob();
-      mimeType = blob.type;
-      const arrayBuffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      base64Data = btoa(binary);
-    } catch (e) {
-      console.error("Failed to fetch image", e);
-      throw new Error("이미지 데이터를 가져오지 못했습니다.");
-    }
-  }
-
-  return { inlineData: { data: base64Data, mimeType: mimeType } };
-}
-
-/**
- * 辅助函数：DataURL 转 Blob
+ * 辅助函数：DataURL 转 Blob (供 Fal.ai 使用)
  */
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const arr = dataUrl.split(",");
@@ -48,54 +15,64 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
 };
 
 /**
- * 核心生成接口
+ * 核心生成函数 - 适配豆包与 Fal.ai
  */
 export const generateFitting = async (
-  engine: 'gemini' | 'fal',
+  engine: 'gemini' | 'fal', 
   petImageSource: string,
   description: string,
   style: string = 'Studio'
 ): Promise<string> => {
   
-  const prompt = `High-end pet fashion editorial photography. The exact pet from the input image is now wearing this outfit: ${description}. The photo is taken in a ${style} background. 8k, professional studio lighting, photorealistic.`;
+  // ---------------------------------------------------------
+  // 1. 核心配置 (在这里填入你的明文信息)
+  // ---------------------------------------------------------
+  // 豆包 (火山引擎) 配置
+  const DOUBAO_API_KEY = "ff9cbd45-18a5-4acf-9db0-a684c415120d"; 
+  const DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
+  // 注意：此处填入 ep-xxxx 格式的推理终端 ID
+  const DOUBAO_MODEL_ID = "doubao-seedream-4-5-251128"; 
+
+  // Fal.ai 配置
+  const FAL_API_KEY = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
 
   // ---------------------------------------------------------
-  // 1. 设置明文 API KEY (请确保下方填入正确的 Key)
+  // 2. 逻辑分发
   // ---------------------------------------------------------
-  const geminiApiKey = "AIzaSyDnj72Pn4Yf8gNq6VK15xkADQJPYmwMNcg"; 
-  const falApiKey = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
 
-  // --- Gemini 引擎实现 (修复逻辑) ---
+  // 即使 UI 传过来的是 'gemini'，内部也指向豆包逻辑
   if (engine === 'gemini') {
     try {
-      // 初始化 SDK (正确姿势)
-      const genAI = new GoogleGenAI(geminiApiKey);
+      const openai = new OpenAI({
+        apiKey: DOUBAO_API_KEY,
+        baseURL: DOUBAO_ENDPOINT,
+        dangerouslyAllowBrowser: true 
+      });
+
+      // 豆包是国产模型，使用中文 Prompt 效果更惊艳
+      const finalPrompt = `专业宠物摄影。一只宠物正在穿着：${description}。场景设在${style}背景下。写实风格，8k精细画质，构图完美。`;
+
+      const response = await openai.images.generate({
+        model: DOUBAO_MODEL_ID,
+        prompt: finalPrompt,
+        size: "1024x1024",
+        n: 1,
+      });
+
+      // 豆包返回的是一个临时图片 URL
+      const imageUrl = response.data[0]?.url;
+      if (imageUrl) return imageUrl;
       
-      // 获取模型实例 (建议用 gemini-1.5-flash，速度快且稳定)
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
-      const petPart = await imageToGeminiPart(petImageSource);
-      
-      // 执行生成请求
-      const result = await model.generateContent([petPart, prompt]);
-      const response = await result.response;
-      
-      // 提取返回的图片数据
-      const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-      
-      if (part?.inlineData) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
-      throw new Error("Gemini가 이미지를 생성하지 못했습니다.");
+      throw new Error("豆包未能生成图片，请检查配额或推理终端状态。");
     } catch (error: any) {
-      console.error("Gemini Error:", error);
-      throw new Error(`Gemini 오류: ${error.message}`);
+      console.error("Doubao Error Detail:", error);
+      throw new Error(`豆包生图失败: ${error.message}`);
     }
   } 
   
-  // --- Fal.ai Flux 引擎实现 ---
+  // --- Fal.ai Flux 引擎 ---
   else {
-    fal.config({ credentials: falApiKey });
+    fal.config({ credentials: FAL_API_KEY });
 
     try {
       let petUrl = petImageSource;
@@ -108,16 +85,14 @@ export const generateFitting = async (
       const result: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
           image_url: petUrl, 
-          prompt: prompt,
+          prompt: `High-end pet fashion, wearing ${description}, ${style} background, 8k photorealistic`,
           strength: 0.65, 
-          num_inference_steps: 28
         }
       });
 
-      const finalImageUrl = result?.images?.[0]?.url || result?.image?.url || result?.data?.images?.[0]?.url;
-
-      if (finalImageUrl) return finalImageUrl;
-      throw new Error("Fal.ai 이미지 URL 추출 실패");
+      const finalUrl = result?.images?.[0]?.url || result?.image?.url;
+      if (finalUrl) return finalUrl;
+      throw new Error("Fal.ai 이미지 추출 실패");
     } catch (err: any) {
       throw new Error(`Fal.ai 오류: ${err.message}`);
     }
