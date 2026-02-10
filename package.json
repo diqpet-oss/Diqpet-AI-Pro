@@ -5,13 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@fal-ai/client": "^1.2.5",
     "@google/generative-ai": "^0.21.0",
-    "openai": "^4.82.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
