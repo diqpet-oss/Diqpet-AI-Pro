@@ -17,9 +17,9 @@ interface Product {
 }
 
 const STATIC_IMAGES = {
-  happy: 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?auto=format&fit=crop&q=80&w=1200',
-  ribbed: 'https://images.unsplash.com/photo-1583512603805-3cc6b41f3edb?auto=format&fit=crop&q=80&w=1200',
-  puffer: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?auto=format&fit=crop&q=80&w=1200'
+  happy: 'https://www.diqpet.com/products/happy_raincoat.jpg',
+  ribbed: 'https://www.diqpet.com/products/ribbed_homewear.jpg',
+  puffer: 'https://www.diqpet.com/products/winter.jpg'
 };
 
 const FlagIcon = ({ code, className }: { code: string; className?: string }) => (
@@ -170,9 +170,9 @@ export default function App() {
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { id: 'bichon', url: 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?auto=format&fit=crop&q=80&w=600' },
-                { id: 'poodle', url: 'https://images.unsplash.com/photo-1516222338250-863216ce01ea?auto=format&fit=crop&q=80&w=600' },
-                { id: 'golden', url: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&q=80&w=600' },
+                { id: 'bichon', url: 'https://www.diqpet.com/products/golden_retriever.jpg' },
+                { id: 'poodle', url: 'https://www.diqpet.com/products/corgi.jpg' },
+                { id: 'golden', url: 'https://www.diqpet.com/products/bulldog.jpg' },
               ].map((breed) => (
                 <button
                   key={breed.id}
