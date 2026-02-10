@@ -57,7 +57,6 @@ export default function App() {
   const activeProduct = products.find(p => p.id === selectedProductId) || products[0];
   const [description, setDescription] = useState(activeProduct.description);
 
-  // 初始化 URL 参数
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const itemParam = params.get('item');
@@ -90,7 +89,7 @@ export default function App() {
     }
   }, []);
 
-  // 核心生成逻辑修复
+  // 核心生成逻辑修复：增加了清除旧结果和更强的错误反馈
   const handleAIGenerate = async () => {
     if (!assets.pet) {
       setStatus(t.petNotSelected);
@@ -99,7 +98,7 @@ export default function App() {
     
     setLoading(true);
     setStatus(`🚀 ${t.engineStarted}...`);
-    // 清除旧结果，防止用户误以为没反应
+    // 重要：生成新图前清除旧图，防止界面无反应感
     setAssets(prev => ({ ...prev, result: null }));
 
     try {
@@ -114,12 +113,12 @@ export default function App() {
         setAssets(prev => ({ ...prev, result: resultUrl }));
         setStatus(`✨ ${t.success}`);
       } else {
-        throw new Error("Empty URL returned from engine");
+        throw new Error("No URL returned from AI Engine");
       }
     } catch (error: any) {
-      console.error("Generate Error:", error);
-      // 将具体的错误信息（如 404 或 ReferenceError）反馈到 UI
-      setStatus(`❌ Error: ${error.message || 'Unknown failure'}`);
+      console.error("Critical Generate Error:", error);
+      // 将报错直接反馈到 UI 状态栏，便于排查 404 或 Key 问题
+      setStatus(`❌ Error: ${error.message || 'Connection Failed'}`);
     } finally {
       setLoading(false);
     }
@@ -158,7 +157,7 @@ export default function App() {
       </nav>
 
       <div className="flex-grow flex flex-col lg:flex-row overflow-hidden">
-        {/* Sidebar Controls */}
+        {/* Sidebar */}
         <aside className="w-full lg:w-[400px] shrink-0 border-r border-white/5 p-6 flex flex-col gap-6 overflow-y-auto bg-[#070707] custom-scrollbar">
           
           <section className="space-y-4">
@@ -223,17 +222,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div className="flex gap-1">
-              {AI_STYLES.map(s => (
-                <button
-                  key={s}
-                  onClick={() => setSelectedStyle(s)}
-                  className={`flex-1 py-2 border text-[8px] font-black uppercase tracking-widest transition-all ${selectedStyle === s ? 'border-white bg-white text-black' : 'border-white/10 text-zinc-500'}`}
-                >
-                  {t[s.toLowerCase()] || s}
-                </button>
-              ))}
-            </div>
             <textarea 
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -250,7 +238,7 @@ export default function App() {
               {loading ? t.generating : t.generate}
             </button>
             {status && (
-              <p className="text-[9px] text-center font-bold uppercase tracking-widest mt-4 text-zinc-400 animate-pulse">
+              <p className="text-[9px] text-center font-bold uppercase tracking-widest mt-4 text-zinc-400">
                 {status}
               </p>
             )}
@@ -262,7 +250,7 @@ export default function App() {
           <div className="flex-grow relative flex items-center justify-center p-8">
             {assets.result ? (
               <img 
-                key={assets.result} // 关键：强制刷新
+                key={assets.result} 
                 src={assets.result} 
                 className="max-w-full max-h-full object-contain shadow-2xl animate-in fade-in duration-700" 
                 alt="AI Result"
@@ -283,49 +271,25 @@ export default function App() {
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4 opacity-10">
-                <div className="w-20 h-20 border-2 border-dashed border-white rounded-full flex items-center justify-center">
-                   <div className="w-2 h-2 bg-white rounded-full animate-ping" />
-                </div>
                 <p className="text-[10px] font-black uppercase tracking-[1em]">{t.waiting}</p>
               </div>
             )}
-            
-            <div className="absolute top-8 left-8 flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse shadow-[0_0_10px_red]" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-700 italic">STUDIO FEED // 2.5 LIVE</span>
-            </div>
           </div>
 
-          {/* Buy Bar */}
           <footer className="h-24 border-t border-white/5 bg-black/80 backdrop-blur-md px-10 flex items-center justify-between">
              <div className="flex flex-col">
                 <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-1">{t.official}</span>
                 <h3 className="text-xl font-black uppercase italic leading-none">{activeProduct.name}</h3>
              </div>
-             
-             <div className="flex items-center gap-4">
-                <button 
-                  onClick={() => window.open(activeProduct.url, "_blank")}
-                  className="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-[10px] hover:bg-orange-500 hover:text-white transition-all active:scale-95"
-                >
-                  {t.buyNow}
-                </button>
-                <div className="flex gap-1">
-                   {['share-nodes', 'download'].map(icon => (
-                     <button key={icon} className="w-12 h-12 border border-white/5 flex items-center justify-center text-zinc-600 hover:text-white hover:border-white transition-all">
-                       <i className={`fa-solid fa-${icon}`} />
-                     </button>
-                   ))}
-                </div>
-             </div>
+             <button 
+                onClick={() => window.open(activeProduct.url, "_blank")}
+                className="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-[10px] hover:bg-orange-500 hover:text-white transition-all"
+             >
+                {t.buyNow}
+             </button>
           </footer>
         </main>
       </div>
-
-      <footer className="h-10 shrink-0 border-t border-white/5 flex items-center justify-between px-10 bg-black text-[8px] font-black text-zinc-800 uppercase tracking-widest">
-        <div>DIQPET DIGITAL STUDIO &bull; POWERED BY GOOGLE & FAL AI</div>
-        <div>© 2026 DIQPET LABS. ALL RIGHTS RESERVED.</div>
-      </footer>
     </div>
   );
 }
