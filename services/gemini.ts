@@ -1,14 +1,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { fal } from "@fal-ai/client";
 
-// 辅助：DataURL 转 Gemini 格式
+// 数据转换辅助函数
 const dataUrlToInlineData = (dataUrl: string) => {
   const [header, data] = dataUrl.split(",");
   const mimeType = header.match(/:(.*?);/)?.[1] || 'image/png';
   return { inlineData: { data, mimeType } };
 };
 
-// 辅助：DataURL 转 Blob
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const [header, base64] = dataUrl.split(",");
   const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
@@ -26,14 +25,14 @@ export const generateFitting = async (
   style: string = 'Studio'
 ): Promise<string> => {
   
-  // 🔐 关键修复：硬编码 Key 以确保部署即用（生产环境建议换回环境变量）
-  const GEMINI_API_KEY = "AIzaSyBZXh2MhgkwWXV7V_uRofw4lT4dL9P4PnQ";
-  const FAL_API_KEY = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
+  // 直接在函数内部定义，防止 ReferenceError
+  const GEMINI_KEY = "AIzaSyBZXh2MhgkwWXV7V_uRofw4lT4dL9P4PnQ";
+  const FAL_KEY = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
 
-  // 配置凭据
-  fal.config({ credentials: FAL_API_KEY });
+  // 配置 Fal
+  fal.config({ credentials: FAL_KEY });
 
-  // 1. 预处理：上传原图到 Fal 获取 URL
+  // 1. 预处理：上传图片获取 URL
   let petUrl = petImageSource;
   if (petImageSource.startsWith('data:')) {
     const blob = dataUrlToBlob(petImageSource);
@@ -43,17 +42,17 @@ export const generateFitting = async (
 
   if (engine === 'gemini') {
     try {
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      // ❗ 修复 404：移除 -latest 后缀
+      const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+      // ❗ 修复 404: 移除 -latest 后缀，使用基础名称以适配 v1beta 路径
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const imagePart = dataUrlToInlineData(petImageSource);
-      const prompt = `Task: Analyze this pet photo. Create an English prompt for: the pet wearing ${description}, background is ${style}. High detail, 8k, photorealistic. Return ONLY the prompt text.`;
+      const prompt = `Analyze this pet photo. Describe its appearance. Then create an English prompt for: the pet wearing ${description}, ${style} background. Photorealistic, 8k. Return ONLY the prompt text.`;
 
       const result = await model.generateContent([prompt, imagePart]);
       const refinedPrompt = result.response.text().trim();
 
-      // 调用图生图
+      // 串联 Fal 进行图生图
       const finalResult: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
           image_url: petUrl,
@@ -63,21 +62,22 @@ export const generateFitting = async (
       });
       return finalResult.images?.[0]?.url || finalResult.image?.url;
     } catch (error: any) {
-      console.error("Gemini 链条故障:", error);
-      throw new Error(`Gemini 模式生图失败: ${error.message}`);
+      console.error("Gemini Logic Error:", error);
+      throw new Error(`Gemini 模式失败: ${error.message}`);
     }
   } else {
+    // Fal 模式逻辑
     try {
       const result: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
           image_url: petUrl,
-          prompt: `Professional pet photo, wearing ${description}, ${style} background, 8k photorealistic`,
+          prompt: `A professional photo of a pet wearing ${description}, ${style} background, 8k photorealistic`,
           strength: 0.65,
         }
       });
       return result.images?.[0]?.url || result.image?.url;
     } catch (err: any) {
-      throw new Error(`Fal.ai 模式失败: ${err.message}`);
+      throw new Error(`Fal 模式失败: ${err.message}`);
     }
   }
 };
