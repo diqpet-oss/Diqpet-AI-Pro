@@ -1,24 +1,26 @@
 {
   "name": "diqpet-ai-pro---virtual-pet-fitting-room",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-   "@google/generative-ai": "^0.21.0",
-    "@fal-ai/client": "latest",
-     "openai": "^4.71.0",
-    "react-dom": "^19.2.4",
-    "react": "^19.2.4"
+    "@fal-ai/client": "^1.2.5",
+    "@google/generative-ai": "^0.21.0",
+    "openai": "^4.82.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
   }
 }
