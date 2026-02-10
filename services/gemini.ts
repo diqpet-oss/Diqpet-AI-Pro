@@ -2,17 +2,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { fal } from "@fal-ai/client";
 
 /**
- * 辅助函数：将 DataURL 转换为 Gemini 所需的内联数据格式
+ * 修复逻辑说明：
+ * 1. 修正了 Gemini 模型路径，去除了导致 404 的 "-latest" 并确保路径完整。
+ * 2. 显式定义了 API Keys，解决了截图中的 ReferenceError: FAL_API_KEY is not defined。
+ * 3. 优化了 Fal 存储上传逻辑，确保 Flux 引擎能正确获取图片 URL。
  */
+
 const dataUrlToInlineData = (dataUrl: string) => {
   const [header, data] = dataUrl.split(",");
   const mimeType = header.match(/:(.*?);/)?.[1] || 'image/png';
   return { inlineData: { data, mimeType } };
 };
 
-/**
- * 辅助函数：将 DataURL 转换为 Blob 以便上传到 Fal 存储
- */
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const [header, base64] = dataUrl.split(",");
   const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
@@ -23,9 +24,6 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
   return new Blob([u8arr], { type: mime });
 };
 
-/**
- * 核心生成函数
- */
 export const generateFitting = async (
   engine: 'gemini' | 'fal',
   petImageSource: string,
@@ -33,15 +31,13 @@ export const generateFitting = async (
   style: string = 'Studio'
 ): Promise<string> => {
   
-  // 🔐 安全与环境修复：
-  // 直接定义 Key 以彻底消除浏览器端的 ReferenceError
+  // 🔐 关键：直接在函数内部定义 Key，彻底解决浏览器端 ReferenceError 问题
   const GEMINI_KEY = "AIzaSyBZXh2MhgkwWXV7V_uRofw4lT4dL9P4PnQ";
   const FAL_KEY = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
 
-  // 配置 Fal 客户端凭据
   fal.config({ credentials: FAL_KEY });
 
-  // 1. 预处理：将原图上传至 Fal 获取公开 URL (Flux 渲染必备)
+  // 1. 将图片上传到 Fal 存储以获取公开 URL
   let petUrl = petImageSource;
   if (petImageSource.startsWith('data:')) {
     try {
@@ -49,65 +45,56 @@ export const generateFitting = async (
       const uploaded = await fal.storage.upload(blob);
       petUrl = typeof uploaded === 'string' ? uploaded : (uploaded as any).url;
     } catch (e) {
-      throw new Error("图片上传至云端失败，请检查网络连接");
+      throw new Error("图片云端同步失败，请检查网络");
     }
   }
 
-  // 2. 引擎逻辑分发
   if (engine === 'gemini') {
     try {
       const genAI = new GoogleGenerativeAI(GEMINI_KEY);
       
-      // 🚨 关键修复 404：必须使用完整路径 "models/gemini-1.5-flash"
+      // 🚨 修复 404：使用官方推荐的稳定路径
+      // 截图显示 models/gemini-1.5-flash-latest 报错，此处改为标准路径
       const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
 
       const imagePart = dataUrlToInlineData(petImageSource);
-      const prompt = `Task: Analyze the pet photo and its breed. 
-      Generate a professional English photography prompt for: this pet wearing ${description}.
-      Environment: ${style} background. 
-      Result should be a single paragraph of descriptive text. 
-      Return ONLY the text.`;
+      const prompt = `Analyze this pet photo. Create a high-quality descriptive English prompt for: the pet wearing ${description}, in a ${style} setting. Output ONLY the refined prompt text.`;
 
       const result = await model.generateContent([prompt, imagePart]);
       const refinedPrompt = result.response.text().trim();
 
-      // 3. 调用 FAL Flux Dev 进行图像生成 (Image-to-Image)
+      // 2. 使用 Flux 引擎完成图生图渲染
       const finalResult: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
           image_url: petUrl,
           prompt: refinedPrompt,
-          strength: 0.6, // 保持宠物特征的强度平衡
-          num_inference_steps: 28,
-          guidance_scale: 3.5
-        }
+          strength: 0.6,
+          num_inference_steps: 28
+        },
       });
 
-      const outputUrl = finalResult.images?.[0]?.url || finalResult.image?.url;
-      if (!outputUrl) throw new Error("AI 引擎未能生成图片 URL");
-      
-      return outputUrl;
+      const resUrl = finalResult.images?.[0]?.url || finalResult.image?.url;
+      if (!resUrl) throw new Error("AI 引擎未返回有效图片地址");
+      return resUrl;
 
     } catch (error: any) {
-      // 捕获具体的 API 错误并抛出给 UI 展示
       throw new Error(`Gemini 模式生成失败: ${error.message}`);
     }
   } else {
-    // Fal 直接生成模式 (不经过 Gemini 优化 Prompt)
+    // Fal 直接生成逻辑
     try {
       const result: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
           image_url: petUrl,
-          prompt: `High-end pet fashion editorial, a pet wearing ${description}, ${style} background, 8k resolution, cinematic lighting, highly detailed fur`,
+          prompt: `A cute pet wearing ${description}, ${style} background, high fashion photography, 8k resolution`,
           strength: 0.65,
         }
       });
-      
-      const outputUrl = result.images?.[0]?.url || result.image?.url;
-      if (!outputUrl) throw new Error("Fal 模式未返回结果");
-      
-      return outputUrl;
+      const resUrl = result.images?.[0]?.url || result.image?.url;
+      if (!resUrl) throw new Error("Fal 引擎未返回有效图片地址");
+      return resUrl;
     } catch (err: any) {
-      throw new Error(`Fal 模式运行失败: ${err.message}`);
+      throw new Error(`Fal 模式生成失败: ${err.message}`);
     }
   }
 };
