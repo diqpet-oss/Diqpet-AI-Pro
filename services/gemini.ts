@@ -1,9 +1,22 @@
-
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { fal } from "@fal-ai/client";
 
 /**
- * 辅助函数：DataURL 转 Blob (供 Fal.ai 使用)
+ * 辅助函数：DataURL 转 Base64 对象 (Gemini 需要)
+ */
+const dataUrlToInlineData = (dataUrl: string) => {
+  const [header, data] = dataUrl.split(",");
+  const mimeType = header.match(/:(.*?);/)?.[1] || 'image/png';
+  return {
+    inlineData: {
+      data,
+      mimeType,
+    },
+  };
+};
+
+/**
+ * 辅助函数：DataURL 转 Blob (Fal.ai 需要)
  */
 const dataUrlToBlob = (dataUrl: string): Blob => {
   const arr = dataUrl.split(",");
@@ -15,86 +28,94 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
   return new Blob([u8arr], { type: mime });
 };
 
-/**
- * 核心生成函数 - 适配豆包与 Fal.ai
- */
 export const generateFitting = async (
-  engine: 'gemini' | 'fal', 
+  engine: 'gemini' | 'fal',
   petImageSource: string,
   description: string,
   style: string = 'Studio'
 ): Promise<string> => {
   
   // ---------------------------------------------------------
-  // 1. 核心配置
+  // 1. 配置
   // ---------------------------------------------------------
-  // 豆包 (火山引擎) 配置
-  const DOUBAO_API_KEY = "ff9cbd45-18a5-4acf-9db0-a684c415120d"; 
-  const DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
-  // 注意：此处填入 ep-xxxx 格式的推理终端 ID
-  const DOUBAO_MODEL_ID = "doubao-seedream-4-5-251128"; 
-
-  // Fal.ai 配置
+  const GEMINI_API_KEY = "AIzaSyBZXh2MhgkwWXV7V_uRofw4lT4dL9P4PnQ";
   const FAL_API_KEY = "81016f5c-e56f-4da4-8524-88e70b9ec655:046cfacd5b7c20fadcb92341c3bce2cb";
 
   // ---------------------------------------------------------
   // 2. 逻辑分发
   // ---------------------------------------------------------
 
-  // 豆包逻辑 (内部标识沿用 'gemini' 对应 UI 逻辑，但内部指向豆包)
+  // --- Google Gemini 引擎 (视觉理解 + 创作) ---
   if (engine === 'gemini') {
     try {
-      const openai = new OpenAI({
-        apiKey: DOUBAO_API_KEY,
-        baseURL: DOUBAO_ENDPOINT,
-        dangerouslyAllowBrowser: true 
-      });
+      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+      // 使用支持视觉的模型
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      // 豆包是国产模型，使用中文 Prompt 效果更惊艳
-      const finalPrompt = `专业宠物摄影。一只宠物正在穿着：${description}。场景设在${style}背景下。写实风格，8k精细画质，构图完美。`;
-
-      const response = await openai.images.generate({
-        model: DOUBAO_MODEL_ID,
-        prompt: finalPrompt,
-        size: "1024x1024",
-      });
-
-      // 豆包返回的是一个临时图片 URL
-      const imageUrl = response.data[0]?.url;
-      if (imageUrl) return imageUrl;
+      const imagePart = dataUrlToInlineData(petImageSource);
       
-      throw new Error("豆包未能生成图片，请检查配额或推理终端状态。");
+      // 注意：Gemini 1.5 并不直接生成图片 URL，而是作为“创作大脑”。
+      // 这里的逻辑是：让 Gemini 分析图片并生成一个可以高度还原宠物的绘画提示词。
+      // 然后通过 Imagen 或其他内置能力（如果你的账号有权限）生成图片。
+      // 如果要直接返回图片，通常需要配合 Google Cloud 的 Vertex AI。
+      // 这里的 Demo 逻辑演示如何获取 Gemini 生成的“精准图生图描述”：
+      const prompt = `分析这张图片中的宠物，描述它的品种、花色和姿态。
+      然后请想象它穿上"${description}"的样子，背景是"${style}"。
+      请输出一段详细的英文提示词，用于 AI 生图模型，确保保持宠物原本的特征。`;
+
+      const result = await model.generateContent([prompt, imagePart]);
+      const refinedPrompt = result.response.text();
+
+      // 这里演示：将 Gemini 生成的精准描述再喂给 Fal 进行高质量生成
+      // 这是目前“强强联手”的最高效方案
+      fal.config({ credentials: FAL_API_KEY });
+      const finalResult: any = await fal.subscribe("fal-ai/flux/dev", {
+        input: {
+          prompt: refinedPrompt,
+          image_url: await uploadToFal(petImageSource), // 参考原图
+          strength: 0.6
+        }
+      });
+
+      return finalResult.images[0].url;
     } catch (error: any) {
-      console.error("Doubao Error Detail:", error);
-      throw new Error(`豆包生图失败: ${error.message}`);
+      console.error("Gemini Error:", error);
+      throw new Error(`Google Gemini 生图逻辑失败: ${error.message}`);
     }
   } 
   
-  // --- Fal.ai Flux 引擎 ---
+  // --- Fal.ai Flux 直接图生图 ---
   else {
     fal.config({ credentials: FAL_API_KEY });
 
     try {
-      let petUrl = petImageSource;
-      if (petImageSource.startsWith('data:')) {
-        const blob = dataUrlToBlob(petImageSource);
-        const uploaded = await fal.storage.upload(blob);
-        petUrl = typeof uploaded === 'string' ? uploaded : (uploaded as any).url;
-      }
+      const petUrl = await uploadToFal(petImageSource);
 
       const result: any = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
         input: {
           image_url: petUrl, 
-          prompt: `High-end pet fashion, wearing ${description}, ${style} background, 8k photorealistic`,
+          prompt: `High-end pet fashion photorealism, a pet wearing ${description}, ${style} background, 8k, highly detailed, maintain pet features`,
           strength: 0.65, 
         }
       });
 
       const finalUrl = result?.images?.[0]?.url || result?.image?.url;
       if (finalUrl) return finalUrl;
-      throw new Error("Fal.ai 이미지 추출 실패");
+      throw new Error("Fal.ai 提取图片失败");
     } catch (err: any) {
-      throw new Error(`Fal.ai 오류: ${err.message}`);
+      throw new Error(`Fal.ai 错误: ${err.message}`);
     }
   }
 };
+
+/**
+ * 提取重复的上传逻辑
+ */
+async function uploadToFal(source: string): Promise<string> {
+  if (source.startsWith('data:')) {
+    const blob = dataUrlToBlob(source);
+    const uploaded = await fal.storage.upload(blob);
+    return typeof uploaded === 'string' ? uploaded : (uploaded as any).url;
+  }
+  return source;
+}
