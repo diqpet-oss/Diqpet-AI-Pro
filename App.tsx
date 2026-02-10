@@ -211,4 +211,121 @@ export default function App() {
 
           <section className="space-y-4">
             <h3 className="text-[11px] font-black uppercase tracking-[0.2em] border-b border-white/5 pb-2">{t.step3}</h3>
-            <div className="grid grid-
+            <div className="grid grid-cols-2 gap-2">
+              {['gemini', 'fal'].map(id => (
+                <button
+                  key={id}
+                  onClick={() => setEngine(id as any)}
+                  className={`p-3 border text-left transition-all ${engine === id ? 'border-orange-500 bg-orange-500/5' : 'border-white/5'}`}
+                >
+                   <p className="text-[9px] font-black uppercase">{id === 'gemini' ? t.engine1 : t.engine2}</p>
+                   <p className="text-[7px] text-zinc-500 uppercase mt-1">{id === 'gemini' ? 'AI Vision' : 'Flux Dev'}</p>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1">
+              {AI_STYLES.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSelectedStyle(s)}
+                  className={`flex-1 py-2 border text-[8px] font-black uppercase tracking-widest transition-all ${selectedStyle === s ? 'border-white bg-white text-black' : 'border-white/10 text-zinc-500'}`}
+                >
+                  {t[s.toLowerCase()] || s}
+                </button>
+              ))}
+            </div>
+            <textarea 
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full bg-zinc-900/50 border border-white/5 p-4 text-[11px] text-zinc-300 focus:border-orange-500 transition-all min-h-[80px] outline-none"
+            />
+          </section>
+
+          <div className="mt-auto">
+            <button 
+              disabled={loading || !assets.pet}
+              onClick={handleAIGenerate}
+              className="w-full py-6 bg-orange-600 hover:bg-orange-500 disabled:opacity-20 font-black uppercase tracking-[0.3em] text-sm transition-all active:scale-[0.98]"
+            >
+              {loading ? t.generating : t.generate}
+            </button>
+            {status && (
+              <p className="text-[9px] text-center font-bold uppercase tracking-widest mt-4 text-zinc-400 animate-pulse">
+                {status}
+              </p>
+            )}
+          </div>
+        </aside>
+
+        {/* Viewport */}
+        <main className="flex-grow bg-[#020202] relative flex flex-col">
+          <div className="flex-grow relative flex items-center justify-center p-8">
+            {assets.result ? (
+              <img 
+                key={assets.result} // 关键：强制刷新
+                src={assets.result} 
+                className="max-w-full max-h-full object-contain shadow-2xl animate-in fade-in duration-700" 
+                alt="AI Result"
+              />
+            ) : assets.pet ? (
+              <div className="relative w-full h-full flex items-center justify-center">
+                 <img 
+                    src={assets.pet} 
+                    className={`max-w-[80%] max-h-[80%] object-contain transition-all duration-1000 ${loading ? 'blur-2xl opacity-20 scale-110' : 'opacity-20 grayscale'}`} 
+                    alt="Preview"
+                 />
+                 {loading && (
+                   <div className="absolute flex flex-col items-center gap-4">
+                     <div className="w-10 h-10 border-t-2 border-orange-500 rounded-full animate-spin" />
+                     <p className="text-[10px] font-black tracking-[0.5em] uppercase text-orange-500">{t.rendering}</p>
+                   </div>
+                 )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4 opacity-10">
+                <div className="w-20 h-20 border-2 border-dashed border-white rounded-full flex items-center justify-center">
+                   <div className="w-2 h-2 bg-white rounded-full animate-ping" />
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-[1em]">{t.waiting}</p>
+              </div>
+            )}
+            
+            <div className="absolute top-8 left-8 flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse shadow-[0_0_10px_red]" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-700 italic">STUDIO FEED // 2.5 LIVE</span>
+            </div>
+          </div>
+
+          {/* Buy Bar */}
+          <footer className="h-24 border-t border-white/5 bg-black/80 backdrop-blur-md px-10 flex items-center justify-between">
+             <div className="flex flex-col">
+                <span className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-1">{t.official}</span>
+                <h3 className="text-xl font-black uppercase italic leading-none">{activeProduct.name}</h3>
+             </div>
+             
+             <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => window.open(activeProduct.url, "_blank")}
+                  className="px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-[10px] hover:bg-orange-500 hover:text-white transition-all active:scale-95"
+                >
+                  {t.buyNow}
+                </button>
+                <div className="flex gap-1">
+                   {['share-nodes', 'download'].map(icon => (
+                     <button key={icon} className="w-12 h-12 border border-white/5 flex items-center justify-center text-zinc-600 hover:text-white hover:border-white transition-all">
+                       <i className={`fa-solid fa-${icon}`} />
+                     </button>
+                   ))}
+                </div>
+             </div>
+          </footer>
+        </main>
+      </div>
+
+      <footer className="h-10 shrink-0 border-t border-white/5 flex items-center justify-between px-10 bg-black text-[8px] font-black text-zinc-800 uppercase tracking-widest">
+        <div>DIQPET DIGITAL STUDIO &bull; POWERED BY GOOGLE & FAL AI</div>
+        <div>© 2026 DIQPET LABS. ALL RIGHTS RESERVED.</div>
+      </footer>
+    </div>
+  );
+}
